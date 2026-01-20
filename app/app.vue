@@ -69,6 +69,11 @@
   const inputRef = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
   let editorRef: any = null;
 
+  // NUEVAS VARIABLES PARA PRESERVAR EL ADN DE LA PLANTILLA
+  const cabeceraOriginal = ref('');
+  const scriptLogicaOriginal = ref('');
+  const datosScriptTemplate = ref({ id: 'report_card', atributos: '' });
+
   const modalTitulo = ref('');
   const modalSubtitulo = ref('');
   const modalPlaceholder = ref('');
@@ -77,7 +82,6 @@
   const onEditorInit = (evt: any) => { editorRef = evt.target; };
   const cerrarModal = () => { mostrarModal.value = false; };
 
-  // MODALES (TAL CUAL LOS TENÍAS)
   const abrirModalVariable = () => {
     tipoModal.value = 'variable';
     modalTitulo.value = 'Insertar Variable';
@@ -134,7 +138,6 @@
       editorRef?.insertContent(`<span class="variable-badge mceNonEditable" data-varname="${valor}">${valor}</span>&nbsp;`);
     } 
     else if (tipoModal.value === 'bucle') {
-      // Ajuste para insertar en tabla o fuera
       const dentroDeTabla = editorRef.dom.getParent(editorRef.selection.getStart(), 'table');
       const startTag = `<% ${valor}.forEach((item, index) => { %>`;
       if (dentroDeTabla) {
@@ -166,31 +169,74 @@
     decoder.innerHTML = codigo;
     let codigoLimpio = decoder.value;
 
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(codigoLimpio, 'text/html');
+
+    // 1. EXTRAER LINKS Y CABECERAS ORIGINALES (LO QUE ME PEDISTE NO OMITIR)
+    const linksOriginales = doc.head.querySelectorAll('link, meta:not([charset])');
+    cabeceraOriginal.value = Array.from(linksOriginales).map(el => el.outerHTML).join('\n    ');
+
+    // 2. EXTRAER LOGICA DE SCRIPT (MODULOS)
+    const scriptsModulos = doc.querySelectorAll('script[type="module"]');
+    scriptLogicaOriginal.value = Array.from(scriptsModulos).map(s => s.innerHTML).join('\n');
+
+    // 3. EXTRAER ESTILOS
     const styleMatch = codigoLimpio.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
     let estilosCapturados = "";
     if (styleMatch) {
         estilosCapturados = styleMatch.map(s => s.replace(/<\/?style[^>]*>/gi, '')).join('\n');
     }
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(codigoLimpio, 'text/html');
     const scriptTemplate = doc.getElementById('report_card') || 
                            doc.getElementById('preinvoice') || 
                            doc.querySelector('script[type="application/x-ejs"]');
 
-    if (scriptTemplate && scriptTemplate.getAttribute('style')) {
-        estilosCapturados += `\nbody { ${scriptTemplate.getAttribute('style')} }`;
+    if (scriptTemplate) {
+        // Guardamos el ID y todos los atributos (style, data-page-margin, etc)
+        datosScriptTemplate.value.id = scriptTemplate.id || 'report_card';
+        datosScriptTemplate.value.atributos = Array.from(scriptTemplate.attributes)
+            .filter(a => a.name !== 'id' && a.name !== 'type')
+            .map(a => `${a.name}="${a.value}"`)
+            .join(' ');
+
+        if (scriptTemplate.getAttribute('style')) {
+            estilosCapturados += `\nbody { ${scriptTemplate.getAttribute('style')} }`;
+        }
     }
     estilosImportados.value = estilosCapturados;
 
+    // 4. CONFIGURACIÓN DEL LIENZO
+    if (editorRef) {
+        const editorDoc = editorRef.getDoc();
+        let styleTag = editorDoc.getElementById('imported-styles');
+        if (!styleTag) {
+            styleTag = editorDoc.createElement('style');
+            styleTag.id = 'imported-styles';
+            editorDoc.head.appendChild(styleTag);
+        }
+        
+        styleTag.innerHTML = `
+            ${estilosCapturados}
+            @page { size: letter portrait; margin: 0; }
+            html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { 
+                position: relative !important; width: 210mm; margin: 0 auto !important; 
+                padding: 1cm 1.5cm !important; min-height: 297mm;
+                background-color: white; font-family: sans-serif; color: #2c3e50;
+                overflow-x: hidden !important;
+            }
+            .main-table { width: 100%; border-collapse: collapse; border: 1.5px solid #333; }
+            .main-table td { border: 1px solid #333; padding: 7px; font-size: 9pt; }
+        `;
+    }
+
     let extraido = scriptTemplate ? scriptTemplate.innerHTML : (doc.body ? doc.body.innerHTML : codigoLimpio);
 
-    // 1. PROCESAR VARIABLES
+    // 5. PROCESAR VARIABLES Y LÓGICA
     let htmlProcesado = extraido.replace(/<%=\s*([\s\S]*?)\s*%>/g, (match, p1) => {
         return `<span class="variable-badge mceNonEditable" data-varname="${p1.trim()}">${p1.trim()}</span>`;
     });
 
-    // 2. PROCESAR LÓGICA CON DETECCIÓN DE TABLAS (CORREGIDO)
     const partes = htmlProcesado.split(/(<%.*?%>)/g);
     let resultado = "";
     let stackLogica: string[] = [];
@@ -203,11 +249,9 @@
 
             if (logic.includes('}') && !logic.includes('{')) {
                 const tag = stackLogica.pop() || 'div';
-                if (tag === 'tbody') {
-                    resultado += `<tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN BLOQUE</td></tr></tbody>`;
-                } else {
-                    resultado += `</div><div class="logic-footer mceNonEditable">FIN BLOQUE</div></div>`;
-                }
+                resultado += tag === 'tbody' 
+                    ? `<tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN BLOQUE</td></tr></tbody>`
+                    : `</div><div class="logic-footer mceNonEditable">FIN BLOQUE</div></div>`;
             } else if (logic.includes('{')) {
                 const isFor = logic.includes('forEach') || logic.includes('for');
                 const tag = dentroDeTabla ? 'tbody' : 'div';
@@ -216,17 +260,9 @@
                 const clase = isFor ? 'bucle' : 'condicion';
                 const displayLabel = logic.replace(/forEach|if|\(|\)|{|}/g, '').trim();
                 
-                if (tag === 'tbody') {
-                  resultado += `<tbody class="logic-block ${clase}" data-ejs-start="${parte.replace(/"/g, '&quot;')}">
-                                  <tr class="mceNonEditable"><td colspan="100%" class="logic-header">${label}: ${displayLabel}</td></tr>`;
-                } else {
-                  resultado += `<div class="logic-block ${clase}" data-ejs-start="${parte.replace(/"/g, '&quot;')}">
-                                  <div class="logic-header mceNonEditable">${label}: ${displayLabel}</div><div class="logic-content">`;
-                }
-            } else if (logic.includes('else')) {
-                resultado += dentroDeTabla 
-                  ? `<tr class="mceNonEditable"><td colspan="100%" class="logic-header" style="background:#64748b">ELSE</td></tr>`
-                  : `</div><div class="logic-header mceNonEditable" style="background:#64748b">ELSE</div><div class="logic-content">`;
+                resultado += tag === 'tbody'
+                  ? `<tbody class="logic-block ${clase}" data-ejs-start="${parte.replace(/"/g, '&quot;')}"><tr class="mceNonEditable"><td colspan="100%" class="logic-header">${label}: ${displayLabel}</td></tr>`
+                  : `<div class="logic-block ${clase}" data-ejs-start="${parte.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">${label}: ${displayLabel}</div><div class="logic-content">`;
             } else {
                 resultado += `<span class="mceNonEditable ejs-logic" data-ejs="${parte.replace(/"/g, '&quot;')}"></span>`;
             }
@@ -235,7 +271,9 @@
         }
     });
 
-    contenidoHtml.value = resultado;
+    contenidoHtml.value = resultado.replace(/position:\s*absolute;([^"]*)/gi, (match, estilos) => {
+        return `position: absolute; ${estilos}`;
+    });
   };
 
   const tinymceConfigs: RawEditorOptions = {
@@ -245,7 +283,7 @@
     language: 'es',
     menubar: 'file edit view insert format tools table help',
     table_resize_bars: true,
-    object_resizing: 'img,table', 
+    object_resizing: 'img,table',
     file_picker_callback: (cb) => {
       const input = document.createElement('input');
       input.setAttribute('type', 'file');
@@ -267,25 +305,21 @@
     },
     content_style: `
       html { background-color: #e5e7eb; padding: 20px; }
-      body { 
-        font-family: sans-serif; font-size: 11pt; width: 21.59cm; min-height: 27.94cm; 
-        margin: 0 auto !important; padding: 1.5cm !important; background-color: white !important; 
+      body {
+        font-family: sans-serif; font-size: 11pt; width: 21.59cm; min-height: 27.94cm;
+        margin: 0 auto !important; padding: 1.5cm !important; background-color: white !important;
         box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box;
+        position: relative !important;
       }
-      .variable-badge { background-color: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 4px; padding: 2px 4px; font-family: monospace; font-weight: bold; }
-      .logic-block { border: 1px dashed #3b82f6; margin: 10px 0; border-radius: 4px; background: rgba(59, 130, 246, 0.02); }
-      tbody.logic-block { outline: 2px dashed #3b82f6; outline-offset: -2px; display: table-row-group; }
-      .logic-header { color: white; padding: 4px 10px; font-family: sans-serif; font-size: 10px; font-weight: bold; }
-      td.logic-header { background-color: #3b82f6 !important; border: none !important; }
-      .logic-content { padding: 10px; min-height: 20px; }
-      .logic-footer { background: #f8fafc; color: #94a3b8; font-size: 8px; padding: 2px 10px; text-align: right; border-top: 1px dashed #eee; }
-      td.logic-footer { border: none !important; }
+      .variable-badge { background-color: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 4px; padding: 2px 4px; font-family: monospace; }
+      .logic-block { border: 1px solid #3b82f6; margin: 2px 0; position: relative; }
+      .logic-header { background-color: #3b82f6; color: white; font-size: 9px; padding: 2px 5px; }
+      .logic-footer { font-size: 8px; color: #94a3b8; text-align: right; padding: 2px; }
+      table { border-collapse: collapse; width: 100%; }
       .bucle { border-color: #3b82f6; }
       .bucle > .logic-header, .bucle td.logic-header { background-color: #3b82f6 !important; }
       .condicion { border-color: #8b5cf6; }
       .condicion > .logic-header, .condicion td.logic-header { background-color: #8b5cf6 !important; }
-      table { border-collapse: collapse; width: 100%; border: 1px solid #333; }
-      table td { border: 1px solid #333; padding: 8px; }
     `,
     setup: (editor) => {
       editor.ui.registry.addButton('variableBtn', { text: '{x} Variable', onAction: () => abrirModalVariable() });
@@ -299,64 +333,80 @@
     tempDiv.innerHTML = contenidoHtml.value;
 
     tempDiv.querySelectorAll('.variable-badge').forEach(b => {
-      b.replaceWith(`<%= ${b.getAttribute('data-varname')} %>`);
+      const varName = b.getAttribute('data-varname');
+      b.replaceWith(`<%= ${varName} %>`);
     });
 
     tempDiv.querySelectorAll('.logic-block').forEach(block => {
-      const start = block.getAttribute('data-ejs-start');
-      const isTable = block.tagName === 'TBODY';
-      
-      // Limpiar elementos visuales del editor
-      block.querySelectorAll('.mceNonEditable').forEach(el => el.remove());
-      
-      const content = isTable ? block.innerHTML : block.querySelector('.logic-content')?.innerHTML || '';
-      block.replaceWith(`${start}${content}<% } -%>`);
+      const startTag = block.getAttribute('data-ejs-start') || '';
+      block.querySelectorAll('.mceNonEditable, .logic-header, .logic-footer').forEach(el => el.remove());
+
+      let innerContent = (block.tagName === 'TBODY' || block.tagName === 'TABLE') 
+        ? block.innerHTML 
+        : (block.querySelector('.logic-content')?.innerHTML || block.innerHTML);
+
+      const esIfSinCierre = startTag.includes('if') && !startTag.includes('}');
+      const cierre = startTag.includes('forEach') ? '<% }) %>' : (esIfSinCierre ? '' : '<% } %>');
+      block.replaceWith(`${startTag}${innerContent}${cierre}`);
     });
 
-    let finalHtml = tempDiv.innerHTML
-      .replace(/&lt;%/g, '<%')
-      .replace(/%&gt;/g, '%>')
-      .replace(/&quot;/g, '"');
+    let finalHtml = tempDiv.innerHTML;
+    finalHtml = finalHtml.replace(/&amp;/g, '&').replace(/&amp;/g, '&'); 
+    finalHtml = finalHtml.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    finalHtml = finalHtml.replace(/\{ %>\s*<% \} %>/g, '{ %>');
 
-    const cssFinal = estilosImportados.value || `
-      @page { size: letter portrait; margin: 0; }
-      html, body { margin: 0; padding: 0; font-family: 'Arimo', sans-serif; -webkit-print-color-adjust: exact; }
-      * { box-sizing: border-box; }
-    `;
+    const mapaAcentos: { [key: string]: string } = {
+        'á': '&aacute;', 'é': '&eacute;', 'í': '&iacute;', 'ó': '&oacute;', 'ú': '&uacute;', 'ñ': '&ntilde;',
+        'Á': '&Aacute;', 'É': '&Eacute;', 'Í': '&Iacute;', 'Ó': '&Oacute;', 'Ú': '&Uacute;', 'Ñ': '&Ntilde;',
+        '¿': '&iquest;', '¡': '&iexcl;'
+    };
+    finalHtml = finalHtml.replace(/[áéíóúñÁÉÍÓÚÑ¿¡]/g, (match) => mapaAcentos[match] || match);
+    finalHtml = finalHtml.replace(/&amp;&amp;/g, '&&').replace(/<tbody>/gi, '').replace(/<\/tbody>/gi, '');
 
-    const htmlCompleto = `<!DOCTYPE html>
-      <html lang="es">
-      <head>
-          <meta charset="UTF-8">
-          <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-          <style>${cssFinal}</style>
-      </head>
-      <body>
-          <script id="report_card" type="application/x-ejs">${finalHtml}<\/script>
-          <script src="https://cdn.jsdelivr.net/npm/ejs@3.1.10/ejs.min.js"><\/script>
-          <script type="module">
-              import qs from 'https://cdn.jsdelivr.net/npm/query-string@9.0.0/+esm';
-              const rawData = qs.parse(window.location.search, { arrayFormat: 'bracket-separator', arrayFormatSeparator: ';' });
-              const helpers = {
-                  formatCurrency: (n) => new Intl.NumberFormat('es-MX', {style:'currency', currency:'MXN'}).format(n || 0),
-                  formatDate: (d) => new Intl.DateTimeFormat('es-MX').format(new Date(d))
-              };
-              try {
-                  const compiled = ejs.render(document.getElementById('report_card').textContent, { ...rawData, ...helpers });
-                  document.body.innerHTML = compiled;
-                  setTimeout(() => { window.print(); }, 500);
-              } catch (err) { console.error(err); }
-          <\/script>
-      </body>
-      </html>`;
+    // 4. ENSAMBLAJE USANDO EL .JOIN SOLICITADO Y LOS DATOS EXTRAÍDOS
+    const cssFinal = estilosImportados.value || `body { font-family: sans-serif; }`;
+    
+    // Si no hay logica capturada, usamos la por defecto para no romper el archivo
+    const scriptLogica = scriptLogicaOriginal.value || [
+      "  import qs from 'https://cdn.jsdelivr.net/npm/query-string@9.0.0/+esm';",
+      "  const rawData = qs.parse(window.location.search, { arrayFormat: 'bracket-separator', arrayFormatSeparator: ';' });",
+      "  const helpers = {",
+      "    formatCurrency: (n) => new Intl.NumberFormat('es-MX', {style:'currency', currency:'MXN'}).format(n || 0),",
+      "    formatDate: (d) => new Intl.DateTimeFormat('es-MX').format(new Date(d))",
+      "  };",
+      "  try {",
+      `    const template = document.getElementById('${datosScriptTemplate.value.id}').textContent;`,
+      "    document.body.innerHTML = ejs.render(template, { ...rawData, ...helpers });",
+      "    setTimeout(() => { window.print(); }, 700);",
+      "  } catch (err) { console.error(err); }"
+    ].join('\n');
+
+    const htmlCompleto = [
+      '<!DOCTYPE html>',
+      '<html lang="es">',
+      '<head>',
+      '    <meta charset="UTF-8">',
+      `    ${cabeceraOriginal.value}`, // AQUÍ SE PONEN LOS LINKS ORIGINALES
+      `    <style>${cssFinal}</style>`,
+      '</head>',
+      '<body>',
+      `<script id="${datosScriptTemplate.value.id}" ${datosScriptTemplate.value.atributos} type="application/x-ejs">${finalHtml.trim()}<\/script>`,
+      '    <script src="https://cdn.jsdelivr.net/npm/ejs@3.1.10/ejs.min.js"><\/script>',
+      '    <script type="module">',
+      scriptLogica,
+      '    <\/script>',
+      '</body>',
+      '</html>'
+    ].join('\n');
 
     const blob = new Blob([htmlCompleto], { type: 'text/html' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${nombreArchivo}.html`;
     a.click();
+    URL.revokeObjectURL(a.href);
   };
-
+  
   const imprimirPlantilla = () => {
     const win = window.open('', '_blank');
     if (win) {
@@ -364,9 +414,39 @@
       temp.innerHTML = contenidoHtml.value;
       temp.querySelectorAll('.variable-badge').forEach(b => b.replaceWith(b.textContent || ''));
       temp.querySelectorAll('.logic-header, .logic-footer').forEach(el => el.remove());
-      win.document.write(`<html><head><style>${estilosImportados.value || 'body{font-family:sans-serif;padding:1cm;}table{border-collapse:collapse;width:100%;}td{border:1px solid #333;padding:8px;}'}</style></head><body>${temp.innerHTML}</body></html>`);
+
+      const estilosFinales = `
+          html { background: white; touch-action: manipulation; }
+          @media (prefers-color-scheme: dark) { html { background: rgb(40, 41, 44); } }
+          html, body { height: 100%; margin: 0; overflow: hidden; width: 100%; }
+          .loading body::before { background: rgb(218, 220, 224); border-right: 1px solid rgb(232, 234, 237); content: ''; display: block; height: 100%; width: calc(100% - 385px); }
+          @page { size: letter portrait; margin: 0; }
+          body { font-family: sans-serif; position: relative; width: 215.9mm; height: 279.4mm; display: flex; flex-direction: column; }
+          .contenedor-base { padding: 1cm 1.5cm; position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; }
+          .contenedor-base > *:last-child { margin-top: auto; }
+          .fecha-impresion-manual { position: absolute; top: 10mm; right: 15mm; font-size: 8pt; color: #000; z-index: 9999; }
+          @media print { html, body { background: white !important; color: black !important; } .fecha-impresion-manual { color: black !important; } }
+          ${estilosImportados.value}
+      `;
+
+      win.document.write(`
+          <!DOCTYPE html>
+          <html lang="es">
+              <head>
+                  <meta charset="UTF-8">
+                  ${cabeceraOriginal.value}
+                  <title>Vista Previa de Impresión</title>
+                  <style>${estilosFinales}</style>
+              </head>
+              <body>
+                  <div class="contenedor-base">
+                      ${temp.innerHTML}
+                  </div>
+              </body>
+          </html>
+      `);
       win.document.close();
-      win.print();
+      setTimeout(() => { win.focus(); win.print(); }, 600);
     }
   };
 </script>
