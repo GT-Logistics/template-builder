@@ -352,6 +352,9 @@
       input.click();
     },
     content_style: `
+      .mce-offscreen-selection { 
+        display: none !important; 
+      }
       html { background-color: #e5e7eb; padding: 20px; }
       body {
         font-family: sans-serif; font-size: 11pt; width: 21.59cm; min-height: 27.94cm;
