@@ -268,7 +268,7 @@
             @page { size: letter portrait; margin: 0; }
             html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             body { 
-                position: relative !important; width: 210mm; margin: 0 auto !important; 
+                width: 210mm; margin: 0 auto !important; 
                 padding: 1cm 1.5cm !important; min-height: 297mm;
                 background-color: white; font-family: sans-serif; color: #2c3e50;
                 overflow-x: hidden !important;
@@ -355,12 +355,16 @@
       .mce-offscreen-selection { 
         display: none !important; 
       }
+      .mce-content-body td[data-mce-selected], 
+      .mce-content-body th[data-mce-selected] {
+        outline: 2px solid #3b82f6 !important;
+        outline-offset: -2px;
+      }
       html { background-color: #e5e7eb; padding: 20px; }
       body {
         font-family: sans-serif; font-size: 11pt; width: 21.59cm; min-height: 27.94cm;
         margin: 0 auto !important; padding: 1.5cm !important; background-color: white !important;
         box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box;
-        position: relative !important;
       }
       .variable-badge { background-color: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 4px; padding: 2px 4px; font-family: monospace; }
       .logic-block { border: 1px solid #3b82f6; margin: 2px 0; position: relative; }
