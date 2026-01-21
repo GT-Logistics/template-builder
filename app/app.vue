@@ -1,17 +1,50 @@
 <template>
+  <div v-if="mostrarModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+    <div class="bg-white p-6 rounded-xl shadow-2xl border border-gray-200" :class="tipoModal === 'importar' ? 'w-[600px]' : 'w-96'">
+      <h3 class="text-lg font-bold mb-2 text-gray-800">{{ modalTitulo }}</h3>
+      <p class="text-sm text-gray-500 mb-4">{{ modalSubtitulo }}</p>
+      
+      <div v-if="tipoModal === 'bucle'" class="space-y-4 mb-6">
+        <div>
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Colección (Lista)</label>
+          <input v-model="inputColeccion" placeholder="ej: unitCodes" class="w-full p-2 border border-gray-300 rounded text-black focus:ring-2 focus:ring-blue-500 outline-none" />
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Variable (Elemento)</label>
+          <input v-model="inputVariable" placeholder="ej: unitCode" class="w-full p-2 border border-gray-300 rounded text-black focus:ring-2 focus:ring-blue-500 outline-none" />
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Índice (Contador)</label>
+          <input v-model="inputIndice" placeholder="ej: index" class="w-full p-2 border border-gray-300 rounded text-black focus:ring-2 focus:ring-blue-500 outline-none" />
+        </div>
+      </div>
+
+      <textarea v-else-if="tipoModal === 'importar'" v-model="inputValor" ref="inputRef" class="w-full h-64 p-3 border border-gray-300 rounded-lg font-mono text-xs text-black mb-6 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Pega tu código aquí..."></textarea>
+      
+      <input 
+        v-else
+        v-model="inputValor" 
+        @keyup.enter="confirmarAccionModal"
+        ref="inputRef"
+        type="text" 
+        :placeholder="modalPlaceholder"
+        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none mb-6 text-black"
+      />
+
+      <div class="flex justify-end gap-3">
+        <button @click="cerrarModal" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+        <button @click="confirmarAccionModal" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="flex flex-col h-screen p-4 bg-gray-50 relative">
     <div class="flex justify-between items-center mb-4 bg-white p-4 rounded shadow-sm border border-gray-200">
       <h1 class="text-2xl font-bold text-gray-800">Editor de Plantillas Pro</h1>
       <div class="flex gap-3">
-        <button @click="abrirModalImportar" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition">
-          Importar Código
-        </button>
-        <button @click="imprimirPlantilla" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
-          Vista Previa
-        </button>
-        <button @click="abrirModalNombreArchivo" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold shadow-md transition">
-          Exportar
-        </button>
+        <button @click="abrirModalImportar" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition">Importar Código</button>
+        <button @click="imprimirPlantilla" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">Vista Previa</button>
+        <button @click="abrirModalNombreArchivo" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold shadow-md transition">Exportar</button>
       </div>
     </div>
 
@@ -24,36 +57,6 @@
         @init="onEditorInit"
       />
     </div>
-
-    <div v-if="mostrarModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-      <div class="bg-white p-6 rounded-xl shadow-2xl border border-gray-200" :class="tipoModal === 'importar' ? 'w-[600px]' : 'w-96'">
-        <h3 class="text-lg font-bold mb-2 text-gray-800">{{ modalTitulo }}</h3>
-        <p class="text-sm text-gray-500 mb-4">{{ modalSubtitulo }}</p>
-        
-        <input 
-          v-if="tipoModal !== 'importar'"
-          v-model="inputValor" 
-          @keyup.enter="confirmarAccionModal"
-          ref="inputRef"
-          type="text" 
-          :placeholder="modalPlaceholder" 
-          class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none mb-6 text-black"
-        />
-
-        <textarea
-          v-else
-          v-model="inputValor"
-          ref="inputRef"
-          placeholder="Pega aquí todo el código HTML..."
-          class="w-full h-64 p-3 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none mb-6 text-black"
-        ></textarea>
-
-        <div class="flex justify-end gap-3">
-          <button @click="cerrarModal" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-          <button @click="confirmarAccionModal" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Confirmar</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -61,6 +64,10 @@
   import { ref, nextTick } from 'vue';
   import type { RawEditorOptions } from 'tinymce';
   import Editor from '@tinymce/tinymce-vue';
+
+  const inputColeccion = ref('');
+  const inputVariable = ref('');
+  const inputIndice = ref('');
 
   const contenidoHtml = ref('<p>¿Qué estás pensando?...</p>');
   const estilosImportados = ref(''); 
@@ -74,13 +81,24 @@
   const scriptLogicaOriginal = ref('');
   const datosScriptTemplate = ref({ id: 'report_card', atributos: '' });
 
+  const bloqueEditando = ref<HTMLElement | null>(null);
+  const esEdicionLogica = ref(false);
+
   const modalTitulo = ref('');
   const modalSubtitulo = ref('');
   const modalPlaceholder = ref('');
   const tipoModal = ref<'variable' | 'archivo' | 'importar' | 'bucle' | 'condicion'>('variable');
 
   const onEditorInit = (evt: any) => { editorRef = evt.target; };
-  const cerrarModal = () => { mostrarModal.value = false; };
+  const cerrarModal = () => {
+    mostrarModal.value = false;
+    esEdicionLogica.value = false;
+    bloqueEditando.value = null;
+    inputValor.value = ''; 
+    inputColeccion.value = '';
+    inputVariable.value = '';
+    inputIndice.value = '';
+  };
 
   const abrirModalVariable = () => {
     tipoModal.value = 'variable';
@@ -131,36 +149,66 @@
   };
 
   const confirmarAccionModal = () => {
-    const valor = inputValor.value.trim();
-    if (!valor) return;
+    // Extraemos y limpiamos los valores de los 3 inputs
+    const col = inputColeccion.value.trim();
+    const varItem = inputVariable.value.trim() || 'item';
+    const idx = inputIndice.value.trim() || 'index';
+    const valSimple = inputValor.value.trim();
 
-    if (tipoModal.value === 'variable') {
-      editorRef?.insertContent(`<span class="variable-badge mceNonEditable" data-varname="${valor}">${valor}</span>&nbsp;`);
-    } 
-    else if (tipoModal.value === 'bucle') {
-      const dentroDeTabla = editorRef.dom.getParent(editorRef.selection.getStart(), 'table');
-      const startTag = `<% ${valor}.forEach((item, index) => { %>`;
-      if (dentroDeTabla) {
-        editorRef?.insertContent(`<tbody class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><tr class="mceNonEditable"><td colspan="100%" class="logic-header">FOR: ${valor}</td></tr><tr><td colspan="100%">Contenido...</td></tr><tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN FOR</td></tr></tbody>`);
-      } else {
-        editorRef?.insertContent(`<div class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">FOR: ${valor}</div><div class="logic-content"><p>Contenido del bucle...</p></div><div class="logic-footer mceNonEditable">FIN FOR</div></div><p>&nbsp;</p>`);
+    // Si es bucle y no hay colección, no hacemos nada
+    if (tipoModal.value === 'bucle' && !col) return;
+    // Si no es bucle y no hay valor (ej. un IF vacío), no hacemos nada
+    if (tipoModal.value !== 'bucle' && tipoModal.value !== 'importar' && !valSimple) return;
+
+    // CASO A: EDITAR BLOQUE EXISTENTE
+    if (esEdicionLogica.value && bloqueEditando.value) {
+      const esBucle = bloqueEditando.value.classList.contains('bucle');
+      
+      // Generamos el nuevo tag basado en los inputs
+      const startTag = esBucle 
+        ? `<% ${col}.forEach((${varItem}, ${idx}) => { %>` 
+        : `<% if (${valSimple}) { %>`;
+      
+      bloqueEditando.value.setAttribute('data-ejs-start', startTag);
+      
+      const header = bloqueEditando.value.querySelector('.logic-header');
+      if (header) {
+        header.textContent = `${esBucle ? 'FOR' : 'IF'}: ${esBucle ? col : valSimple}`;
       }
-    }
-    else if (tipoModal.value === 'condicion') {
-      const dentroDeTabla = editorRef.dom.getParent(editorRef.selection.getStart(), 'table');
-      const startTag = `<% if (${valor}) { %>`;
-      if (dentroDeTabla) {
-        editorRef?.insertContent(`<tbody class="logic-block condicion" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><tr class="mceNonEditable"><td colspan="100%" class="logic-header">IF: ${valor}</td></tr><tr><td colspan="100%">Contenido...</td></tr><tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN IF</td></tr></tbody>`);
-      } else {
-        editorRef?.insertContent(`<div class="logic-block condicion" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">IF: ${valor}</div><div class="logic-content"><p>Contenido condicional...</p></div><div class="logic-footer mceNonEditable">FIN IF</div></div><p>&nbsp;</p>`);
-      }
-    }
-    else if (tipoModal.value === 'importar') {
-      procesarCodigoImportado(valor);
+
+      contenidoHtml.value = editorRef.getContent();
     } 
+    // CASO B: INSERTAR NUEVO (Tu lógica original mejorada)
     else {
-      ejecutarExportacion(valor);
+      if (tipoModal.value === 'variable') {
+        editorRef?.insertContent(`<span class="variable-badge mceNonEditable" data-varname="${valSimple}">${valSimple}</span>&nbsp;`);
+      } 
+      else if (tipoModal.value === 'bucle') {
+        const startTag = `<% ${col}.forEach((${varItem}, ${idx}) => { %>`;
+        const dentroDeTabla = editorRef.dom.getParent(editorRef.selection.getStart(), 'table');
+        
+        const html = dentroDeTabla 
+          ? `<tbody class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><tr class="mceNonEditable"><td colspan="100%" class="logic-header">FOR: ${col}</td></tr><tr><td colspan="100%">Contenido...</td></tr><tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN FOR</td></tr></tbody>`
+          : `<div class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">FOR: ${col}</div><div class="logic-content"><p>Contenido del bucle...</p></div><div class="logic-footer mceNonEditable">FIN FOR</div></div><p>&nbsp;</p>`;
+        
+        editorRef?.insertContent(html);
+      }
+      else if (tipoModal.value === 'condicion') {
+        const startTag = `<% if (${valSimple}) { %>`;
+        const dentroDeTabla = editorRef.dom.getParent(editorRef.selection.getStart(), 'table');
+        const html = dentroDeTabla
+          ? `<tbody class="logic-block condicion" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><tr class="mceNonEditable"><td colspan="100%" class="logic-header">IF: ${valSimple}</td></tr><tr><td colspan="100%">Contenido...</td></tr><tr class="mceNonEditable"><td colspan="100%" class="logic-footer">FIN IF</td></tr></tbody>`
+          : `<div class="logic-block condicion" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">IF: ${valSimple}</div><div class="logic-content"><p>Contenido...</p></div><div class="logic-footer mceNonEditable">FIN IF</div></div><p>&nbsp;</p>`;
+        editorRef?.insertContent(html);
+      }
+      else if (tipoModal.value === 'importar') {
+        procesarCodigoImportado(valSimple);
+      } 
+      else {
+        ejecutarExportacion(valSimple);
+      }
     }
+
     cerrarModal();
   };
 
@@ -313,7 +361,7 @@
       }
       .variable-badge { background-color: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 4px; padding: 2px 4px; font-family: monospace; }
       .logic-block { border: 1px solid #3b82f6; margin: 2px 0; position: relative; }
-      .logic-header { background-color: #3b82f6; color: white; font-size: 9px; padding: 2px 5px; }
+      .logic-header { background-color: #3b82f6; color: white; font-size: 9px; padding: 2px 5px; cursor: pointer; }
       .logic-footer { font-size: 8px; color: #94a3b8; text-align: right; padding: 2px; }
       table { border-collapse: collapse; width: 100%; }
       .bucle { border-color: #3b82f6; }
@@ -325,6 +373,76 @@
       editor.ui.registry.addButton('variableBtn', { text: '{x} Variable', onAction: () => abrirModalVariable() });
       editor.ui.registry.addButton('bucleBtn', { text: 'FOR', tooltip: 'Insertar Bucle', onAction: () => abrirModalBucle() });
       editor.ui.registry.addButton('condicionBtn', { text: 'IF', tooltip: 'Insertar Condición', onAction: () => abrirModalCondicion() });
+
+      editor.on('dblclick', (e) => {
+        const target = e.target as HTMLElement; 
+        const bloque = editor.dom.getParent(target, '.logic-block') as HTMLElement;
+        
+        if (bloque) {
+          bloqueEditando.value = bloque;
+          esEdicionLogica.value = true;
+          
+          const tagOriginal = bloque.getAttribute('data-ejs-start') || '';
+          let textoParaInput = tagOriginal.replace(/<%\s*|\s*%>/g, ''); 
+
+          if (bloque.classList.contains('bucle')) {
+            const mEntries = textoParaInput.match(/of\s+(.*?)\.entries\(\)/);
+            const mOf = textoParaInput.match(/of\s+(.*?)\)/);
+            const mForEach = textoParaInput.match(/(.*?)\.forEach/);
+            
+            if (mEntries && mEntries[1]) {
+              textoParaInput = mEntries[1].trim();
+            } else if (mOf && mOf[1]) {
+              textoParaInput = mOf[1].trim();
+            } else if (mForEach && mForEach[1]) {
+              textoParaInput = mForEach[1].trim();
+            }
+
+            inputColeccion.value = textoParaInput;
+
+            const partesBucle = tagOriginal.match(/\(([^)]+)\)/);
+            if (partesBucle && partesBucle[1]) {
+              // Mantenemos tu estructura que no da errores
+              const nombres = partesBucle[1].split(',').map(n => {
+                return n.trim()
+                  .replace('const ', '')
+                  .replace('[', '')
+                  .replace(']', '')
+                  .replace('(', '') // <--- Agregamos esto para limpiar el ( de forEach((
+                  .replace(')', '') // <--- Agregamos esto por seguridad para limpiar el final
+                  .split(' of ')[0];
+              });
+
+              if (tagOriginal.includes('.entries')) {
+                inputIndice.value = nombres[0] || 'index';
+                inputVariable.value = nombres[1] || 'item';
+              } else {
+                inputVariable.value = nombres[0] || 'item';
+                inputIndice.value = nombres[1] || 'index';
+              }
+            } else {
+              inputVariable.value = 'item';
+              inputIndice.value = 'index';
+            }
+
+          } else {
+            const mIf = textoParaInput.match(/if\s*\((.*)\)\s*{/);
+            if (mIf && mIf[1]) {
+              textoParaInput = mIf[1].trim();
+            }
+          }
+
+          tipoModal.value = bloque.classList.contains('bucle') ? 'bucle' : 'condicion';
+          modalTitulo.value = `Editar ${tipoModal.value.toUpperCase()}`;
+          modalSubtitulo.value = "Modifica los parámetros:";
+          inputValor.value = textoParaInput; 
+          mostrarModal.value = true;
+          
+          nextTick(() => {
+            if (inputRef.value) inputRef.value.focus();
+          });
+        }
+      });
     }
   };
 
