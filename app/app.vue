@@ -1,4 +1,46 @@
 <template>
+  <div v-if="mostrarModalData" class="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] backdrop-blur-sm">
+    <div class="bg-white p-6 rounded-2xl shadow-2xl w-[750px] max-h-[85vh] flex flex-col border border-gray-200">
+      <div class="mb-4">
+        <h3 class="text-xl font-bold text-gray-800">Simulación de Datos</h3>
+        <p class="text-sm text-gray-500">Rellena las variables para generar la vista previa real.</p>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-6 pr-2">
+        <div v-for="(val, key) in esquemaDatos" :key="key">
+          <div v-if="!key.startsWith('_template_') && !Array.isArray(val)" class="flex flex-col gap-1">
+            <label class="text-[10px] font-black text-gray-500 uppercase tracking-wider">{{ key }}</label>
+            <input v-model="esquemaDatos[key]" class="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-black">
+          </div>
+
+          <div v-if="Array.isArray(val)" class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-blue-800">TABLA: {{ key }}</span>
+              <button class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-1.5 rounded-full transition" @click="agregarFilaBucle(key)">
+                + Añadir Fila
+              </button>
+            </div>
+            
+            <div v-for="(item, idx) in esquemaDatos[key]" :key="idx" class="bg-white p-4 rounded-lg border border-blue-200 mb-3 flex gap-3 items-end shadow-sm">
+              <div v-for="(__, subKey) in item" :key="subKey" class="flex-1">
+                <label class="text-[9px] font-bold text-gray-400 uppercase">{{ subKey }}</label>
+                <input v-model="esquemaDatos[key][idx][subKey]" class="w-full p-1.5 border-b-2 border-gray-100 focus:border-blue-400 outline-none text-sm">
+              </div>
+              <button class="text-red-400 hover:text-red-600 p-1" @click="esquemaDatos[key].splice(idx, 1)">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 mt-8 pt-4 border-t">
+        <button class="px-6 py-2 text-gray-500 font-medium hover:bg-gray-100 rounded-xl transition" @click="mostrarModalData = false">Cancelar</button>
+        <button class="px-8 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold shadow-lg transition" @click="imprimirPlantilla">
+          Generar Documento
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div v-if="mostrarModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
     <div class="bg-white p-6 rounded-xl shadow-2xl border border-gray-200" :class="tipoModal === 'importar' ? 'w-[600px]' : 'w-96'">
       <h3 class="text-lg font-bold mb-2 text-gray-800">{{ modalTitulo }}</h3>
@@ -68,7 +110,7 @@
       <h1 class="text-2xl font-bold text-gray-800">Editor de Plantillas Pro</h1>
       <div class="flex gap-3">
         <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition" @click="abrirModalImportar">Importar Código</button>
-        <button class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition" @click="imprimirPlantilla">Vista Previa</button>
+        <button class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition" @click="iniciarVistaPrevia">Vista Previa</button>
         <button class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold shadow-md transition" @click="abrirModalNombreArchivo">Exportar</button>
       </div>
     </div>
@@ -176,6 +218,60 @@
     nextTick(() => inputRef.value?.focus());
   };
 
+  // --- VARIABLES DE ESTADO ---
+  const esquemaDatos = ref<any>({});
+  const mostrarModalData = ref(false);
+
+  // --- 1. EL ESCÁNER (Genera los campos del formulario) ---
+  const generarEsquemaDatos = () => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = editorRef.getContent();
+    
+    const nuevoEsquema: any = {};
+
+    // Detectar variables simples
+    tempDiv.querySelectorAll('.variable-badge').forEach((el: any) => {
+      const varName = el.getAttribute('data-varname');
+      if (varName && !el.closest('.logic-block.bucle')) {
+        nuevoEsquema[varName] = ""; 
+      }
+    });
+
+    // Detectar Bucles (Listas)
+    tempDiv.querySelectorAll('.logic-block.bucle').forEach((block: any) => {
+      const startTag = block.getAttribute('data-ejs-start') || '';
+      const match = startTag.match(/<%\s*([\w\d_]+)\.forEach/);
+      
+      if (match && match[1]) {
+        const col = match[1];
+        nuevoEsquema[col] = []; // El array donde irán las filas
+        
+        const plantilla: any = {};
+        block.querySelectorAll('.variable-badge').forEach((v: any) => {
+          const vName = v.getAttribute('data-varname') || '';
+          const limpia = vName.includes('.') ? vName.split('.')[1] : vName;
+          plantilla[limpia] = "";
+        });
+        // Guardamos la estructura para poder clonarla al añadir filas
+        nuevoEsquema[`_template_${col}`] = plantilla;
+      }
+    });
+    esquemaDatos.value = nuevoEsquema;
+  };
+
+  // --- 2. ACCIONES DEL MODAL ---
+  const iniciarVistaPrevia = () => {
+    generarEsquemaDatos();
+    mostrarModalData.value = true;
+  };
+
+  const agregarFilaBucle = (key: string) => {
+    const template = esquemaDatos.value[`_template_${key}`];
+    if (template) {
+      esquemaDatos.value[key].push({ ...template });
+    }
+  };
+
   const confirmarAccionModal = () => {
     const col = inputColeccion.value.trim();
     const varItem = inputVariable.value.trim() || 'item';
@@ -185,58 +281,86 @@
     if (tipoModal.value === 'bucle' && !col) return;
     if (tipoModal.value !== 'bucle' && tipoModal.value !== 'importar' && !valSimple) return;
 
-    if (tipoModal.value === 'condicion') {
-      // 1. Creamos el objeto de estructura para poder editarlo luego
-      const estructura = {
-        ifCond: valSimple,
-        elifs: listaElifs.value.filter(e => e.trim() !== ""),
-        hasElse: tieneElse.value
-      };
+    // --- CASO: EDICIÓN DE BLOQUE EXISTENTE (NO ROMPER CONTENIDO) ---
+    if (esEdicionLogica.value && bloqueEditando.value) {
+      const el = bloqueEditando.value;
 
-      // 2. Generamos el HTML visual para el editor
-      const htmlBranches = estructura.elifs.map(e => `
-        <div class="logic-header mceNonEditable" style="background-color: #8b5cf6 !important">ELSE IF: ${e}</div>
-        <div class="logic-content"><p>Contenido alternativo...</p></div>
-      `).join('');
-
-      const htmlElse = tieneElse.value ? `
-        <div class="logic-header mceNonEditable" style="background-color: #64748b !important">ELSE</div>
-        <div class="logic-content"><p>Contenido por defecto...</p></div>
-      ` : '';
-
-      const html = `
-        <div class="logic-block condicion" data-ejs-structure='${JSON.stringify(estructura)}'>
-          <div class="logic-header mceNonEditable">IF: ${valSimple}</div>
-          <div class="logic-content"><p>Contenido principal...</p></div>
-          ${htmlBranches}
-          ${htmlElse}
-          <div class="logic-footer mceNonEditable">FIN CONDICIONAL</div>
-        </div><p>&nbsp;</p>`;
-
-      if (esEdicionLogica.value && bloqueEditando.value) {
-        bloqueEditando.value.outerHTML = html;
-      } else {
-        editorRef?.insertContent(html);
+      if (tipoModal.value === 'condicion') {
+        // Actualizamos la estructura de datos sin tocar el HTML interno todavía
+        const nuevaEstructura = {
+          ifCond: valSimple,
+          elifs: listaElifs.value.filter(e => e.trim() !== ""),
+          hasElse: tieneElse.value
+        };
+        el.setAttribute('data-ejs-structure', JSON.stringify(nuevaEstructura));
+        
+        // Actualizamos solo el texto del Header principal
+        const mainHeader = el.querySelector('.logic-header');
+        if (mainHeader) mainHeader.textContent = `IF: ${valSimple}`;
+        
+        // Nota: Si agregaste nuevos ELSE IF en la edición, aquí podrías appendarlos 
+        // pero lo más seguro para no romper el contenido es solo actualizar el IF principal.
+      } 
+      else if (tipoModal.value === 'bucle') {
+        const nuevoStart = `<% ${col}.forEach((${varItem}, ${idx}) => { %>`;
+        el.setAttribute('data-ejs-start', nuevoStart);
+        
+        const header = el.querySelector('.logic-header');
+        if (header) header.textContent = `FOR: ${col}`;
       }
+
+      contenidoHtml.value = editorRef.getContent();
     } 
-    else if (tipoModal.value === 'bucle') {
-      const startTag = `<% ${col}.forEach((${varItem}, ${idx}) => { %>`;
-      const html = `<div class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}"><div class="logic-header mceNonEditable">FOR: ${col}</div><div class="logic-content"><p>Contenido del bucle...</p></div><div class="logic-footer mceNonEditable">FIN FOR</div></div><p>&nbsp;</p>`;
-      
-      if (esEdicionLogica.value && bloqueEditando.value) {
-        bloqueEditando.value.outerHTML = html;
-      } else {
-        editorRef?.insertContent(html);
-      }
-    }
-    else if (tipoModal.value === 'importar') {
-      procesarCodigoImportado(valSimple);
-    } 
-    else if (tipoModal.value === 'variable') {
-      editorRef?.insertContent(`<span class="variable-badge mceNonEditable" data-varname="${valSimple}">${valSimple}</span>&nbsp;`);
-    }
+    // --- CASO: INSERTAR NUEVO BLOQUE (TU LÓGICA ORIGINAL) ---
     else {
-      ejecutarExportacion(valSimple);
+      if (tipoModal.value === 'condicion') {
+        const estructura = {
+          ifCond: valSimple,
+          elifs: listaElifs.value.filter(e => e.trim() !== ""),
+          hasElse: tieneElse.value
+        };
+
+        const htmlBranches = estructura.elifs.map(e => `
+          <div class="logic-header mceNonEditable" style="background-color: #8b5cf6 !important">ELSE IF: ${e}</div>
+          <div class="logic-content"><p>Contenido alternativo...</p></div>
+        `).join('');
+
+        const htmlElse = tieneElse.value ? `
+          <div class="logic-header mceNonEditable" style="background-color: #64748b !important">ELSE</div>
+          <div class="logic-content"><p>Contenido por defecto...</p></div>
+        ` : '';
+
+        const html = `
+          <div class="logic-block condicion" data-ejs-structure='${JSON.stringify(estructura).replace(/'/g, "&#39;")}'>
+            <div class="logic-header mceNonEditable">IF: ${valSimple}</div>
+            <div class="logic-content"><p>Contenido principal...</p></div>
+            ${htmlBranches}
+            ${htmlElse}
+            <div class="logic-footer mceNonEditable">FIN CONDICIONAL</div>
+          </div><p>&nbsp;</p>`;
+
+        editorRef?.insertContent(html);
+      } 
+      else if (tipoModal.value === 'bucle') {
+        const startTag = `<% ${col}.forEach((${varItem}, ${idx}) => { %>`;
+        const html = `
+          <div class="logic-block bucle" data-ejs-start="${startTag.replace(/"/g, '&quot;')}">
+            <div class="logic-header mceNonEditable">FOR: ${col}</div>
+            <div class="logic-content"><p>Contenido del bucle...</p></div>
+            <div class="logic-footer mceNonEditable">FIN FOR</div>
+          </div><p>&nbsp;</p>`;
+        
+        editorRef?.insertContent(html);
+      }
+      else if (tipoModal.value === 'variable') {
+        editorRef?.insertContent(`<span class="variable-badge mceNonEditable" data-varname="${valSimple}">${valSimple}</span>&nbsp;`);
+      }
+      else if (tipoModal.value === 'importar') {
+        procesarCodigoImportado(valSimple);
+      }
+      else {
+        ejecutarExportacion(valSimple);
+      }
     }
 
     cerrarModal();
@@ -362,7 +486,7 @@
       } else {
           resultado += parte;
       }
-  });
+    });
 
     contenidoHtml.value = resultado.replace(/position:\s*absolute;([^"]*)/gi, (match, estilos) => {
         return `position: absolute; ${estilos}`;
